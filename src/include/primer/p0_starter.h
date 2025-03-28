@@ -24,9 +24,9 @@ class Matrix {
  protected:
   // TODO(P0): Add implementation
   Matrix(int r, int c) {
-    rows = r;
-    cols = c;
-    linear = new T[r*c];
+     rows = r;
+   cols = c;
+   linear = new T[rows*cols]();
   }
 
   // # of rows in the matrix
@@ -56,7 +56,7 @@ class Matrix {
 
   // TODO(P0): Add implementation
   virtual ~Matrix() {
-    delete[] linear;
+     delete[] linear;
   }
 };
 
@@ -65,10 +65,11 @@ class RowMatrix : public Matrix<T> {
  public:
   // TODO(P0): Add implementation
   RowMatrix(int r, int c) : Matrix<T>(r, c) {
-    data_ = new T*[r];
-    for (int i = 0; i < r; i++){
-      data_[i] = new T[c];
-    }
+     data_ = new T*[r];
+   for (int i = 0; i < r; i++) {
+      // data_[i] = this->linear + (i * c);
+      data_[i] = new T[c]();
+   }
   }
 
   // TODO(P0): Add implementation
@@ -87,22 +88,20 @@ class RowMatrix : public Matrix<T> {
 
   // TODO(P0): Add implementation
   void MatImport(T *arr) override {
-    int r = Matrix<T>::rows;
-    int c = Matrix<T>::cols;
-    for (int i = 0; i < r; i++){
-        for (int j = 0; j < c; j++){
-            data_[i][j] = arr[i*c + j];
+     for (int i = 0; i < this->rows; i++) {
+        for (int j = 0; j < this->cols; j++) {
+           data_[i][j] = arr[i * this->cols + j];
         }
-    }
+     }
   }
 
   // TODO(P0): Add implementation
   ~RowMatrix() override {
-    for (int i = 0; i < Matrix<T>::rows; i++){
+     for (int i = 0; i < Matrix<T>::rows; i++) {
         delete[] data_[i];
-    }
-    delete[] data_;
-  }
+     }
+     delete[] data_;
+  };
 
  private:
   // 2D array containing the elements of the matrix in row-major format
@@ -117,30 +116,75 @@ class RowMatrixOperations {
  public:
   // Compute (mat1 + mat2) and return the result.
   // Return nullptr if dimensions mismatch for input matrices.
-  static std::unique_ptr< RowMatrix<T> > AddMatrices(std::unique_ptr< RowMatrix<T> > mat1,
-                                                   std::unique_ptr< RowMatrix<T> > mat2) {
+  static std::unique_ptr<RowMatrix<T>> AddMatrices(std::unique_ptr<RowMatrix<T>> mat1,
+                                                   std::unique_ptr<RowMatrix<T>> mat2) {
     // TODO(P0): Add code
-
-    return std::unique_ptr< RowMatrix<T> >(nullptr);
+    int rows1 = mat1->GetRows();
+    int cols1 = mat1->GetColumns();
+    int rows2 = mat2->GetRows();
+    int cols2 = mat2->GetColumns();
+    if (rows1 != rows2 || cols1 != cols2) {
+    return std::unique_ptr<RowMatrix<T>>(nullptr);
   }
+    auto result = std::make_unique<RowMatrix<T>>(rows1, cols1);
+  for (int i = 0; i < rows1; ++i) {
+    for (int j = 0; j < cols1; ++j) {
+      result->SetElem(i, j, mat1->GetElem(i, j) + mat2->GetElem(i,j));
+    }
+  }                                             return result;
+ }
+
+
+
+
+
+
+
+
+
+
+
 
   // Compute matrix multiplication (mat1 * mat2) and return the result.
   // Return nullptr if dimensions mismatch for input matrices.
-  static std::unique_ptr< RowMatrix<T> > MultiplyMatrices(std::unique_ptr< RowMatrix<T> > mat1,
-                                                        std::unique_ptr< RowMatrix<T> > mat2) {
+  static std::unique_ptr<RowMatrix<T>> MultiplyMatrices(std::unique_ptr<RowMatrix<T>> mat1,
+                                                        std::unique_ptr<RowMatrix<T>> mat2) {
     // TODO(P0): Add code
+    int rows1 = mat1->GetRows();
+    int cols1 = mat1->GetColumns();
+    int rows2 = mat2->GetRows();
+    int cols2 = mat2->GetColumns();
+    if (cols1 != rows2) {
+      return std::unique_ptr<RowMatrix<T>>(nullptr);
+    }
 
-    return std::unique_ptr< RowMatrix<T> >(nullptr);
+    auto result = std::make_unique<RowMatrix<T>>(rows1, cols2);
+    for (int i = 0; i < rows1; ++i) {
+      for (int j = 0; j < cols2; ++j) {
+        T sum = 0;
+        for (int k = 0; k < cols1; ++k) {
+          sum += mat1->GetElem(i, k) * mat2->GetElem(k, j);
+        }
+        result->SetElem(i, j, sum);
+      }
+    }
+    return result;
+
   }
 
   // Simplified GEMM (general matrix multiply) operation
   // Compute (matA * matB + matC). Return nullptr if dimensions mismatch for input matrices
-  static std::unique_ptr< RowMatrix<T> > GemmMatrices(std::unique_ptr< RowMatrix<T> > matA,
-                                                    std::unique_ptr< RowMatrix<T> > matB,
-                                                    std::unique_ptr< RowMatrix<T> > matC) {
+  static std::unique_ptr<RowMatrix<T>> GemmMatrices(std::unique_ptr<RowMatrix<T>> matA,
+                                                    std::unique_ptr<RowMatrix<T>> matB,
+                                                    std::unique_ptr<RowMatrix<T>> matC) {
     // TODO(P0): Add code
-
-    return std::unique_ptr< RowMatrix<T> >(nullptr);
+    auto mult_result = MultiplyMatrices(std::move(matA), std::move(matB));
+    if (mult_result == nullptr || 
+        mult_result->GetRows() != matC->GetRows() ||
+        mult_result->GetColumns() != matC->GetColumns()) {
+    return std::unique_ptr<RowMatrix<T>>(nullptr);
   }
-};  
-}// namespace bustub
+  return AddMatrices(std::move(mult_result), std::move(matC));
+}
+};
+}  // namespace bustub
