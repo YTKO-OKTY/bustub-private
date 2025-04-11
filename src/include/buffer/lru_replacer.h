@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <list>
 #include <mutex>  // NOLINT
 #include <vector>
@@ -38,7 +39,7 @@ class LRUReplacer : public Replacer {
   ~LRUReplacer() override;
 
   bool Victim(frame_id_t *frame_id) override;
-
+  
   void Pin(frame_id_t frame_id) override;
 
   void Unpin(frame_id_t frame_id) override;
@@ -47,6 +48,8 @@ class LRUReplacer : public Replacer {
 
  private:
   // TODO(student): implement me!
+ std::list<frame_id_t> lru_list_;
+ std::mutex latch_;
 };
 
 }  // namespace bustub
