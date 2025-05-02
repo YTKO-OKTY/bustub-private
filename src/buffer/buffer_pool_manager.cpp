@@ -42,10 +42,81 @@ Page *BufferPoolManager::FetchPageImpl(page_id_t page_id) {
   // 2.     If R is dirty, write it back to the disk.
   // 3.     Delete R from the page table and insert P.
   // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
-  return nullptr;
+
+  latch_.lock();
+
+  std::unordered_map<page_id_t, frame_id_t>::iterator search = page_table_.find(page_id);
+  Page* retPage;
+  if (search != page_table_.end()){
+    frame_id_t fid = search->second;
+    retPage = &pages_[fid];
+    retPage -> pin_count_++;
+    latch_.unlock();
+    return retPage;
+  }
+
+
+  frame_id_t pageFrameID;
+  Page *replPage;
+  if (!free_list_.empty()){
+    pageFrameID = free_list_.front();
+    free_list_.pop_front();
+    page_table_.insert({page_id, pageFrameID});
+    replPage = &pages_[pageFrameID];
+    replPage -> page_id_ = page_id;
+    replPage -> pin_count_ = 1;
+    replPage -> is_dirty_ = false;
+    replacer_ -> Pin(pageFrameID);
+    disk_manager_ -> ReadPage(page_id, replPage -> data_);
+    latch_.unlock();
+    return replPage;
+  }
+
+  if (!replacer_ -> Victim(&pageFrameID)){
+    latch_.unlock();
+    return nullptr;
+  }
+  
+  replPage = &pages_[pageFrameID];
+  if (replPage->IsDirty()){
+    disk_manager_ -> WritePage(replPage -> page_id_, replPage -> data_);
+  }
+  page_table_.erase(page_table_.find(replPage -> page_id_));
+  page_table_.insert({page_id, pageFrameID});
+
+  replPage -> page_id_ = page_id;
+  replPage -> pin_count_ = 1;
+  replPage -> is_dirty_ = false;
+  replacer_ -> Pin(pageFrameID);
+  disk_manager_->ReadPage(page_id, replPage->data_);
+  latch_.unlock();
+  return replPage;
 }
 
-bool BufferPoolManager::UnpinPageImpl(page_id_t page_id, bool is_dirty) { return false; }
+bool BufferPoolManager::UnpinPageImpl(page_id_t page_id, bool is_dirty) { 
+  
+  latch_.lock();
+  frame_id_t unpinned_frame_id = page_table_.find(page_id) -> second;
+  Page *unpinned_page = &pages_[unpinned_frame_id];
+
+  if (unpinned_page -> pin_count_ <= 0){
+    latch_.unlock();
+    return false;
+  }
+
+  //frame_id_t victim_frame = page_table_.find(page_id) -> second;
+  
+  unpinned_page ->pin_count_--;
+  if (is_dirty){
+    unpinned_page -> is_dirty_ = true;
+  }
+  if (unpinned_page -> pin_count_ == 0){
+    replacer_ -> Unpin(unpinned_frame_id);
+  }
+
+  latch_.unlock();
+  return true;
+ }
 
 bool BufferPoolManager::FlushPageImpl(page_id_t page_id) {
   // Make sure you call DiskManager::WritePage!
@@ -58,7 +129,56 @@ Page *BufferPoolManager::NewPageImpl(page_id_t *page_id) {
   // 2.   Pick a victim page P from either the free list or the replacer. Always pick from the free list first.
   // 3.   Update P's metadata, zero out memory and add P to the page table.
   // 4.   Set the page ID output parameter. Return a pointer to P.
-  return nullptr;
+  
+  latch_.lock();
+  size_t free_list_size = BufferPoolManager::free_list_.size();
+  size_t unpinned_non_free_pages = BufferPoolManager::replacer_->Size();
+  if(free_list_size == 0 && unpinned_non_free_pages == 0){
+    latch_.unlock();
+    return nullptr;
+  }
+
+  frame_id_t pageFrameID;
+  Page *new_page;
+  page_id_t new_page_id;
+  if (!free_list_.empty()){
+    pageFrameID = free_list_.front();
+    free_list_.pop_front();
+
+    new_page_id = disk_manager_->AllocatePage();
+    new_page = &pages_[pageFrameID];
+    page_table_[new_page_id] = pageFrameID;
+    new_page -> page_id_ = new_page_id;
+    new_page -> pin_count_ = 1;
+    new_page -> is_dirty_ = false;
+    
+    latch_.unlock();
+    return new_page;
+  }
+
+  if (!replacer_ -> Victim(&pageFrameID)){
+    latch_.unlock();
+    return nullptr;
+  }
+  
+  Page *replPage = &pages_[pageFrameID];
+
+  if (replPage ->IsDirty()){
+    disk_manager_ -> WritePage(replPage -> page_id_, replPage -> data_);
+  }
+  page_table_.erase(page_table_.find(replPage -> page_id_));
+  new_page_id = disk_manager_ -> AllocatePage();
+  page_table_.insert({new_page_id, pageFrameID});
+
+  replPage -> page_id_ = new_page_id;
+  replPage -> pin_count_ = 1;
+  
+
+  *page_id = new_page_id;
+
+  latch_.unlock();
+  return replPage;
+  
 }
 
 bool BufferPoolManager::DeletePageImpl(page_id_t page_id) {
